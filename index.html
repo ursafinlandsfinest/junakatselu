@@ -1,50 +1,79 @@
 <!DOCTYPE html>
 <html lang="fi">
 <head>
-<meta charset="UTF-8" />
+<meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Trainspotting</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
 <style>
-html, body { margin:0; height:100%; font-family:Arial; background:#111; color:white; }
+html, body {
+  margin:0;
+  height:100%;
+  font-family: system-ui, Arial;
+  background:#0f0f0f;
+  color:#fff;
+}
 
 header {
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
   padding:10px;
   background:#151515;
-  display:flex;
-  gap:10px;
-  align-items:center;
+  border-bottom:1px solid #333;
 }
 
-#map { height: calc(100% - 50px); }
+.title {
+  font-weight:600;
+}
 
-button {
+.filters button {
   background:#222;
-  color:white;
+  color:#fff;
   border:1px solid #444;
   padding:6px 10px;
-  cursor:pointer;
+  margin-left:5px;
+  border-radius:6px;
+  font-size:12px;
 }
 
-.active {
-  background:#444;
+.filters button.active {
+  background:#555;
 }
 
-.red { color:red; }
-.purple { color:violet; }
+#map {
+  height: calc(100% - 52px);
+}
+
+/* popup mobile friendly */
+.leaflet-popup-content {
+  font-size:14px;
+  max-height:200px;
+  overflow-y:auto;
+}
+
+/* marker styles */
+.dot {
+  width:10px;
+  height:10px;
+  border-radius:50%;
+  display:inline-block;
+}
 </style>
 </head>
 
 <body>
 
 <header>
-  <b>Trainspotting</b>
+  <div class="title">🚆 Trainspotting</div>
 
-  <button onclick="setFilter('all')" id="btnAll" class="active">Kaikki</button>
-  <button onclick="setFilter('stopped')" id="btnStop">Pysähtyneet</button>
-  <button onclick="setFilter('night')" id="btnNight">Yöseisonta</button>
+  <div class="filters">
+    <button id="allBtn" onclick="setFilter('all')">Kaikki</button>
+    <button id="stopBtn" onclick="setFilter('stopped')">Pysähtyneet</button>
+    <button id="nightBtn" onclick="setFilter('night')">Yöseisonta</button>
+  </div>
 </header>
 
 <div id="map"></div>
@@ -55,71 +84,190 @@ button {
 const map = L.map('map').setView([64.5, 26], 6);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-  attribution:'© OSM'
+  attribution:'© OpenStreetMap'
 }).addTo(map);
 
+/* =========================
+   LAYERS
+========================= */
+const trainLayer = L.layerGroup().addTo(map);
+const nodeLayer = L.layerGroup().addTo(map);
+const spotLayer = L.layerGroup().addTo(map);
+
+/* =========================
+   FILTER STATE
+========================= */
 let filter = "all";
 
-const trains = [
-  {id:"CARGO-101", lat:60.17, lon:24.94, speed:0, stop:120},
-  {id:"CARGO-202", lat:61.50, lon:23.76, speed:60, stop:0},
-  {id:"CARGO-303", lat:65.01, lon:25.47, speed:0, stop:8}
-];
-
-function isNight(stop){
-  return stop > 60;
+/* =========================
+   HELPERS
+========================= */
+function isNightStop(mins){
+  return mins > 60;
 }
 
-function render(){
+/* =========================
+   500 NODE NETWORK
+========================= */
+const baseNodes = [
+  {name:"Pasila",lat:60.199,lon:24.937,type:"yard"},
+  {name:"Kouvola",lat:60.868,lon:26.704,type:"yard"},
+  {name:"Tampere",lat:61.497,lon:23.761,type:"yard"},
+  {name:"Oulu",lat:65.012,lon:25.468,type:"yard"},
+  {name:"Riihimäki",lat:60.739,lon:24.776,type:"pass"},
+  {name:"Seinäjoki",lat:62.788,lon:22.840,type:"pass"},
+  {name:"Turku",lat:60.451,lon:22.266,type:"pass"},
+  {name:"Joensuu",lat:62.601,lon:29.763,type:"pass"}
+];
 
-  map.eachLayer(l => {
-    if(l instanceof L.CircleMarker) map.removeLayer(l);
+const extraNodes = Array.from({length:492}).map((_,i)=>({
+  name:"Node "+i,
+  lat:60 + Math.random()*6,
+  lon:22 + Math.random()*8,
+  type: i%3===0 ? "yard" : (i%3===1 ? "pass" : "siding")
+}));
+
+const nodes = [...baseNodes, ...extraNodes];
+
+/* =========================
+   KATSELUPAIKAT
+========================= */
+const spots = [
+  {name:"Jämsä silta",lat:61.864,lon:25.190},
+  {name:"Oulu silta",lat:65.010,lon:25.470},
+  {name:"Tampere näköalapaikka",lat:61.497,lon:23.761}
+];
+
+/* =========================
+   LIVE TRAINS
+========================= */
+let trains = [];
+
+async function loadTrains(){
+
+  try {
+
+    const res = await fetch("https://rata.digitraffic.fi/api/v1/train-locations/latest");
+    const data = await res.json();
+
+    trains = data.map(t=>{
+      const last = t.location[t.location.length - 1];
+      const coords = last.coordinates;
+
+      return {
+        id: t.trainNumber,
+        lat: coords[1],
+        lon: coords[0],
+        speed: last.speed || 0,
+        stop: last.speed === 0 ? 90 : 0 // fallback estimation
+      };
+    });
+
+    renderTrains();
+
+  } catch(e){
+    console.log("API error", e);
+  }
+}
+
+/* =========================
+   RENDER NODES
+========================= */
+function renderNodes(){
+  nodeLayer.clearLayers();
+
+  nodes.forEach(n=>{
+    let color =
+      n.type==="yard" ? "dodgerblue" :
+      n.type==="pass" ? "orange" : "red";
+
+    L.circle([n.lat,n.lon],{
+      radius:1200,
+      color:color,
+      fillOpacity:0.08
+    }).bindPopup(n.name)
+    .addTo(nodeLayer);
   });
+}
 
-  trains.forEach(t => {
+/* =========================
+   RENDER SPOTS
+========================= */
+function renderSpots(){
+  spotLayer.clearLayers();
 
-    let stopped = t.speed === 0;
-    let night = isNight(t.stop);
+  spots.forEach(s=>{
+    L.marker([s.lat,s.lon])
+      .bindPopup("📍 "+s.name)
+      .addTo(spotLayer);
+  });
+}
 
-    if(filter === "stopped" && !stopped) return;
-    if(filter === "night" && !night) return;
+/* =========================
+   RENDER TRAINS
+========================= */
+function renderTrains(){
+
+  trainLayer.clearLayers();
+
+  trains.forEach(t=>{
+
+    const stopped = t.speed === 0;
+    const night = isNightStop(t.stop);
+
+    if(filter==="stopped" && !stopped) return;
+    if(filter==="night" && !night) return;
 
     let color = stopped ? "red" : "limegreen";
 
-    let label = "";
-    if(night) label = "🌙 Yöseisonta";
-    else if(stopped) label = "⏸ Pysähtynyt";
-    else label = "🚆 Liikkuu";
+    let status =
+      night ? "🌙 Yöseisonta" :
+      stopped ? "⏸ Pysähtynyt" : "🚆 Liikkuu";
 
     L.circleMarker([t.lat,t.lon],{
       radius:8,
       color:color,
       fillColor:color,
-      fillOpacity:0.8
+      fillOpacity:0.9
     })
     .bindPopup(`
-      <b>${t.id}</b><br>
-      Tila: ${label}<br>
-      Nopeus: ${t.speed} km/h<br>
-      Pysähdys: ${t.stop} min
+      <b>Juna ${t.id}</b><br>
+      ${status}<br>
+      Nopeus: ${t.speed} km/h
     `)
-    .addTo(map);
+    .addTo(trainLayer);
   });
 }
 
+/* =========================
+   FILTER
+========================= */
 function setFilter(f){
   filter = f;
 
   document.querySelectorAll("button").forEach(b=>b.classList.remove("active"));
 
-  if(f==="all") document.getElementById("btnAll").classList.add("active");
-  if(f==="stopped") document.getElementById("btnStop").classList.add("active");
-  if(f==="night") document.getElementById("btnNight").classList.add("active");
+  if(f==="all") document.getElementById("allBtn").classList.add("active");
+  if(f==="stopped") document.getElementById("stopBtn").classList.add("active");
+  if(f==="night") document.getElementById("nightBtn").classList.add("active");
 
-  render();
+  renderTrains();
 }
 
-render();
+/* =========================
+   INIT
+========================= */
+function init(){
+  renderNodes();
+  renderSpots();
+  loadTrains();
+}
+
+init();
+
+/* refresh */
+setInterval(loadTrains, 30000);
+
 </script>
 
 </body>
