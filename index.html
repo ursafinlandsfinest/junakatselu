@@ -3,231 +3,124 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-
 <title>Trainspotting</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
 <style>
-html, body {
-  margin: 0;
-  height: 100%;
-  font-family: Arial, sans-serif;
-  background: #111;
-  color: #fff;
-}
+html, body { margin:0; height:100%; font-family:Arial; background:#111; color:white; }
 
 header {
-  padding: 10px 14px;
-  background: #151515;
-  border-bottom: 1px solid #333;
+  padding:10px;
+  background:#151515;
+  display:flex;
+  gap:10px;
+  align-items:center;
 }
 
-h1 {
-  margin: 0;
-  font-size: 20px;
-}
-
-#map {
-  height: calc(100% - 50px);
-}
-
-.legend {
-  position: absolute;
-  bottom: 10px;
-  left: 10px;
-  background: rgba(0,0,0,0.7);
-  padding: 10px;
-  font-size: 12px;
-  border-radius: 8px;
-  z-index: 999;
-}
-
-.dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  display: inline-block;
-  margin-right: 6px;
-}
-
-.red { background: red; }
-.green { background: limegreen; }
-.blue { background: dodgerblue; }
-
-.triangle {
-  width: 0;
-  height: 0;
-  border-left: 6px solid transparent;
-  border-right: 6px solid transparent;
-  border-bottom: 10px solid gold;
-  display: inline-block;
-  margin-right: 6px;
-}
-
-/* popup scroll */
-.leaflet-popup-content {
-  max-height: 220px;
-  overflow-y: auto;
-}
-
-/* side panel */
-#panel {
-  position: fixed;
-  right: -320px;
-  top: 0;
-  width: 300px;
-  height: 100%;
-  background: #1a1a1a;
-  transition: 0.25s;
-  padding: 15px;
-  z-index: 2000;
-  overflow-y: auto;
-}
-
-#panel.open {
-  right: 0;
-}
+#map { height: calc(100% - 50px); }
 
 button {
-  margin-top: 10px;
-  padding: 8px;
-  background: #222;
-  color: white;
-  border: 1px solid #444;
-  cursor: pointer;
+  background:#222;
+  color:white;
+  border:1px solid #444;
+  padding:6px 10px;
+  cursor:pointer;
 }
+
+.active {
+  background:#444;
+}
+
+.red { color:red; }
+.purple { color:violet; }
 </style>
 </head>
 
 <body>
 
 <header>
-  <h1>Trainspotting</h1>
-  <button onclick="togglePanel()">Info</button>
+  <b>Trainspotting</b>
+
+  <button onclick="setFilter('all')" id="btnAll" class="active">Kaikki</button>
+  <button onclick="setFilter('stopped')" id="btnStop">Pysähtyneet</button>
+  <button onclick="setFilter('night')" id="btnNight">Yöseisonta</button>
 </header>
 
 <div id="map"></div>
-
-<div class="legend">
-  <div><span class="dot red"></span> Pysähtynyt</div>
-  <div><span class="dot green"></span> Liikkeessä</div>
-  <div><span class="dot blue"></span> Ratapiha</div>
-  <div><span class="triangle"></span> Katselupaikka</div>
-</div>
-
-<div id="panel">
-  <h3>Info</h3>
-  <p>Tämä sivusto näyttää Suomen tavarajunat ja turvallisia katselupaikkoja.</p>
-  <p>Älä mene raiteille tai ratapihoille.</p>
-  <button onclick="togglePanel()">Sulje</button>
-</div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
 const map = L.map('map').setView([64.5, 26], 6);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: '© OpenStreetMap'
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+  attribution:'© OSM'
 }).addTo(map);
 
-const trainLayer = L.layerGroup().addTo(map);
-const yardLayer = L.layerGroup().addTo(map);
-const spotLayer = L.layerGroup().addTo(map);
+let filter = "all";
 
-function getColor(speed){
-  if(speed === 0) return "red";
-  return "green";
-}
-
-function isNightStop(stopMinutes){
-  return stopMinutes > 60;
-}
-
-/* RATAPIHAT */
-const yards = [
-  ["Kouvola",60.868,26.704],
-  ["Tampere",61.497,23.761],
-  ["Oulu",65.012,25.468],
-  ["Pasila",60.199,24.937],
-  ["Riihimäki",60.739,24.776]
+const trains = [
+  {id:"CARGO-101", lat:60.17, lon:24.94, speed:0, stop:120},
+  {id:"CARGO-202", lat:61.50, lon:23.76, speed:60, stop:0},
+  {id:"CARGO-303", lat:65.01, lon:25.47, speed:0, stop:8}
 ];
 
-yards.forEach(y=>{
-  L.circle([y[1],y[2]],{
-    radius: 3000,
-    color: "dodgerblue",
-    fillOpacity: 0.1
-  }).bindPopup("Ratapiha: " + y[0]).addTo(yardLayer);
-});
+function isNight(stop){
+  return stop > 60;
+}
 
-/* KATSELUPAIKAT */
-const spots = [
-  ["Jämsä silta",61.864,25.190],
-  ["Oulu silta",65.010,25.470]
-];
+function render(){
 
-spots.forEach(s=>{
-  const icon = L.divIcon({
-    className:"",
-    html:'<div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:10px solid gold;"></div>'
+  map.eachLayer(l => {
+    if(l instanceof L.CircleMarker) map.removeLayer(l);
   });
 
-  L.marker([s[1],s[2]],{icon})
-  .bindPopup("Katselupaikka: "+s[0])
-  .addTo(spotLayer);
-});
+  trains.forEach(t => {
 
-/* SIMULOITU JUNADATA (vaihda API:in myöhemmin) */
-async function loadTrains(){
+    let stopped = t.speed === 0;
+    let night = isNight(t.stop);
 
-  trainLayer.clearLayers();
+    if(filter === "stopped" && !stopped) return;
+    if(filter === "night" && !night) return;
 
-  const data = [
-    {id:1,lat:60.86,lon:26.70,speed:0,stop:80},
-    {id:2,lat:61.50,lon:23.76,speed:65,stop:0},
-    {id:3,lat:65.01,lon:25.46,speed:0,stop:15}
-  ];
+    let color = stopped ? "red" : "limegreen";
 
-  data.forEach(t=>{
-
-    let color = getColor(t.speed);
-
-    let status = "Liikkeessä";
-    if(t.speed === 0 && isNightStop(t.stop)){
-      status = "🌙 Yöseisonta";
-    } else if(t.speed === 0){
-      status = "Pysähtynyt";
-    }
+    let label = "";
+    if(night) label = "🌙 Yöseisonta";
+    else if(stopped) label = "⏸ Pysähtynyt";
+    else label = "🚆 Liikkuu";
 
     L.circleMarker([t.lat,t.lon],{
-      radius: 7,
-      color: color,
-      fillColor: color,
-      fillOpacity: 0.8
+      radius:8,
+      color:color,
+      fillColor:color,
+      fillOpacity:0.8
     })
     .bindPopup(`
-      <b>Juna ${t.id}</b><br>
-      ${status}<br>
+      <b>${t.id}</b><br>
+      Tila: ${label}<br>
       Nopeus: ${t.speed} km/h<br>
       Pysähdys: ${t.stop} min
     `)
-    .addTo(trainLayer);
+    .addTo(map);
   });
 }
 
-loadTrains();
+function setFilter(f){
+  filter = f;
 
-/* PANEL */
-function togglePanel(){
-  document.getElementById("panel").classList.toggle("open");
+  document.querySelectorAll("button").forEach(b=>b.classList.remove("active"));
+
+  if(f==="all") document.getElementById("btnAll").classList.add("active");
+  if(f==="stopped") document.getElementById("btnStop").classList.add("active");
+  if(f==="night") document.getElementById("btnNight").classList.add("active");
+
+  render();
 }
-</script>
 
-<!-- GoatCounter -->
-<script data-goatcounter="https://junakatselu.goatcounter.com/count"
-        async src="//gc.zgo.at/count.js"></script>
+render();
+</script>
 
 </body>
 </html>
