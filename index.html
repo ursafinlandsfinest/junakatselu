@@ -23,6 +23,8 @@ header {
   padding:10px;
   background:#151515;
   border-bottom:1px solid #333;
+  flex-wrap:wrap;
+  gap:8px;
 }
 
 .title {
@@ -34,9 +36,8 @@ header {
   color:#fff;
   border:1px solid #444;
   padding:6px 10px;
-  margin-left:5px;
   border-radius:6px;
-  font-size:12px;
+  cursor:pointer;
 }
 
 .filters button.active {
@@ -44,22 +45,13 @@ header {
 }
 
 #map {
-  height: calc(100% - 52px);
+  height: calc(100% - 60px);
 }
 
-/* popup mobile friendly */
 .leaflet-popup-content {
   font-size:14px;
   max-height:200px;
   overflow-y:auto;
-}
-
-/* marker styles */
-.dot {
-  width:10px;
-  height:10px;
-  border-radius:50%;
-  display:inline-block;
 }
 </style>
 </head>
@@ -70,7 +62,7 @@ header {
   <div class="title">🚆 Trainspotting</div>
 
   <div class="filters">
-    <button id="allBtn" onclick="setFilter('all')">Kaikki</button>
+    <button id="allBtn" onclick="setFilter('all')" class="active">Kaikki</button>
     <button id="stopBtn" onclick="setFilter('stopped')">Pysähtyneet</button>
     <button id="nightBtn" onclick="setFilter('night')">Yöseisonta</button>
   </div>
@@ -87,16 +79,10 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
   attribution:'© OpenStreetMap'
 }).addTo(map);
 
-/* =========================
-   LAYERS
-========================= */
 const trainLayer = L.layerGroup().addTo(map);
 const nodeLayer = L.layerGroup().addTo(map);
 const spotLayer = L.layerGroup().addTo(map);
 
-/* =========================
-   FILTER STATE
-========================= */
 let filter = "all";
 
 /* =========================
@@ -107,7 +93,16 @@ function isNightStop(mins){
 }
 
 /* =========================
-   500 NODE NETWORK
+   KATSELUPAIKAT
+========================= */
+const spots = [
+  {name:"Jämsä silta",lat:61.864,lon:25.190},
+  {name:"Oulu silta",lat:65.010,lon:25.470},
+  {name:"Tampere näköalapaikka",lat:61.497,lon:23.761}
+];
+
+/* =========================
+   500 NODES (kevyt mutta laajennettava)
 ========================= */
 const baseNodes = [
   {name:"Pasila",lat:60.199,lon:24.937,type:"yard"},
@@ -130,38 +125,38 @@ const extraNodes = Array.from({length:492}).map((_,i)=>({
 const nodes = [...baseNodes, ...extraNodes];
 
 /* =========================
-   KATSELUPAIKAT
-========================= */
-const spots = [
-  {name:"Jämsä silta",lat:61.864,lon:25.190},
-  {name:"Oulu silta",lat:65.010,lon:25.470},
-  {name:"Tampere näköalapaikka",lat:61.497,lon:23.761}
-];
-
-/* =========================
-   LIVE TRAINS
+   LIVE JUNAT
 ========================= */
 let trains = [];
 
 async function loadTrains(){
+
+  trainLayer.clearLayers();
 
   try {
 
     const res = await fetch("https://rata.digitraffic.fi/api/v1/train-locations/latest");
     const data = await res.json();
 
-    trains = data.map(t=>{
-      const last = t.location[t.location.length - 1];
-      const coords = last.coordinates;
+    console.log("Junia API:ssa:", data.length);
 
-      return {
-        id: t.trainNumber,
-        lat: coords[1],
-        lon: coords[0],
-        speed: last.speed || 0,
-        stop: last.speed === 0 ? 90 : 0 // fallback estimation
-      };
-    });
+    trains = data
+      .filter(t => t.location && t.location.length)
+      .map(t => {
+
+        const last = t.location[t.location.length - 1];
+        if(!last || !last.coordinates) return null;
+
+        return {
+          id: t.trainNumber,
+          lat: last.coordinates[1],
+          lon: last.coordinates[0],
+          speed: last.speed ?? 0,
+          stop: last.speed === 0 ? 90 : 0
+        };
+
+      })
+      .filter(Boolean);
 
     renderTrains();
 
@@ -208,8 +203,6 @@ function renderSpots(){
 ========================= */
 function renderTrains(){
 
-  trainLayer.clearLayers();
-
   trains.forEach(t=>{
 
     const stopped = t.speed === 0;
@@ -218,7 +211,7 @@ function renderTrains(){
     if(filter==="stopped" && !stopped) return;
     if(filter==="night" && !night) return;
 
-    let color = stopped ? "red" : "limegreen";
+    const color = stopped ? "red" : "limegreen";
 
     let status =
       night ? "🌙 Yöseisonta" :
@@ -264,8 +257,6 @@ function init(){
 }
 
 init();
-
-/* refresh */
 setInterval(loadTrains, 30000);
 
 </script>
