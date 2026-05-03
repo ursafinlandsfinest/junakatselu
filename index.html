@@ -38,6 +38,7 @@ header {
   padding:6px 10px;
   border-radius:6px;
   cursor:pointer;
+  font-size:12px;
 }
 
 .filters button.active {
@@ -79,31 +80,26 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
   attribution:'© OpenStreetMap'
 }).addTo(map);
 
+/* ===== LAYERS ===== */
 const trainLayer = L.layerGroup().addTo(map);
 const nodeLayer = L.layerGroup().addTo(map);
 const spotLayer = L.layerGroup().addTo(map);
 
 let filter = "all";
 
-/* =========================
-   HELPERS
-========================= */
+/* ===== HELPERS ===== */
 function isNightStop(mins){
   return mins > 60;
 }
 
-/* =========================
-   KATSELUPAIKAT
-========================= */
+/* ===== KATSELUPAIKAT ===== */
 const spots = [
   {name:"Jämsä silta",lat:61.864,lon:25.190},
   {name:"Oulu silta",lat:65.010,lon:25.470},
   {name:"Tampere näköalapaikka",lat:61.497,lon:23.761}
 ];
 
-/* =========================
-   500 NODES (kevyt mutta laajennettava)
-========================= */
+/* ===== 500 NODES ===== */
 const baseNodes = [
   {name:"Pasila",lat:60.199,lon:24.937,type:"yard"},
   {name:"Kouvola",lat:60.868,lon:26.704,type:"yard"},
@@ -124,14 +120,11 @@ const extraNodes = Array.from({length:492}).map((_,i)=>({
 
 const nodes = [...baseNodes, ...extraNodes];
 
-/* =========================
-   LIVE JUNAT
-========================= */
+/* ===== TRAINS ===== */
 let trains = [];
 
+/* ===== LOAD TRAINS (FIXED) ===== */
 async function loadTrains(){
-
-  trainLayer.clearLayers();
 
   try {
 
@@ -140,8 +133,10 @@ async function loadTrains(){
 
     console.log("Junia API:ssa:", data.length);
 
+    trainLayer.clearLayers();
+
     trains = data
-      .filter(t => t.location && t.location.length)
+      .filter(t => t.location && t.location.length > 0)
       .map(t => {
 
         const last = t.location[t.location.length - 1];
@@ -161,13 +156,11 @@ async function loadTrains(){
     renderTrains();
 
   } catch(e){
-    console.log("API error", e);
+    console.error("API error:", e);
   }
 }
 
-/* =========================
-   RENDER NODES
-========================= */
+/* ===== RENDER NODES ===== */
 function renderNodes(){
   nodeLayer.clearLayers();
 
@@ -185,9 +178,7 @@ function renderNodes(){
   });
 }
 
-/* =========================
-   RENDER SPOTS
-========================= */
+/* ===== RENDER SPOTS ===== */
 function renderSpots(){
   spotLayer.clearLayers();
 
@@ -198,9 +189,7 @@ function renderSpots(){
   });
 }
 
-/* =========================
-   RENDER TRAINS
-========================= */
+/* ===== RENDER TRAINS ===== */
 function renderTrains(){
 
   trains.forEach(t=>{
@@ -232,9 +221,7 @@ function renderTrains(){
   });
 }
 
-/* =========================
-   FILTER
-========================= */
+/* ===== FILTER ===== */
 function setFilter(f){
   filter = f;
 
@@ -247,9 +234,7 @@ function setFilter(f){
   renderTrains();
 }
 
-/* =========================
-   INIT
-========================= */
+/* ===== INIT ===== */
 function init(){
   renderNodes();
   renderSpots();
